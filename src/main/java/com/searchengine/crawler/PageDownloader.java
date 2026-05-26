@@ -180,42 +180,4 @@ public class PageDownloader {
         return url != null ? url : "";
     }
 
-    /**
-     * 判断是否为国外域名（需要代理）
-     */
-    private boolean isForeignUrl(String url) {
-        if (url == null) return false;
-        String lower = url.toLowerCase();
-        // 国外常见域名后缀和网站
-        String[] foreignDomains = {
-            ".com", ".org", ".net", ".io", ".co", ".dev",
-            "youtube.com", "google.com", "twitter.com", "x.com",
-            "facebook.com", "instagram.com", "github.com",
-            "wikipedia.org", "reddit.com", "medium.com",
-            "stackoverflow.com", "linkedin.com", "amazon.com"
-        };
-
-        // 排除国内网站
-        String[] domesticDomains = {
-            ".cn", ".com.cn", ".net.cn", ".org.cn",
-            "baidu.com", "qq.com", "taobao.com", "jd.com",
-            "sina.com", "weibo.com", "zhihu.com", "bilibili.com",
-            "douyin.com", "tencent.com", "alibaba.com",
-            "163.com", "126.com", "sohu.com", "csdn.net"
-        };
-
-        for (String domain : domesticDomains) {
-            if (lower.contains(domain)) {
-                return false;
-            }
-        }
-
-        for (String domain : foreignDomains) {
-            if (lower.contains(domain)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
 }

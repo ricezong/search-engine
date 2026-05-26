@@ -1,5 +1,7 @@
 package com.searchengine.task;
 
+import com.searchengine.common.Config;
+
 import java.util.List;
 
 /**
@@ -38,8 +40,8 @@ public class CrawlTask {
         this.createTime = System.currentTimeMillis();
         this.updateTime = System.currentTimeMillis();
         // 默认代理配置
-        this.proxyHost = com.searchengine.common.Config.PROXY_HOST;
-        this.proxyPort = com.searchengine.common.Config.PROXY_PORT;
+        this.proxyHost = Config.PROXY_HOST;
+        this.proxyPort = Config.PROXY_PORT;
         this.useProxy = true;
     }
 

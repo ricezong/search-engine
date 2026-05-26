@@ -1,9 +1,12 @@
 package com.searchengine.controller;
 
 import com.searchengine.common.SearchResult;
+import com.searchengine.controller.dto.CreateTaskRequest;
+import com.searchengine.controller.dto.UpdateTaskRequest;
 import com.searchengine.task.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
@@ -31,73 +34,72 @@ public class SearchEngineController {
     /**
      * 创建任务
      * POST /api/tasks
-     * Body: { "taskName": "xxx", "seedUrls": ["..."], "maxPages": 100, "proxyHost": "127.0.0.1", "proxyPort": 7890, "useProxy": true }
      */
     @PostMapping("/tasks")
-    public Map<String, Object> createTask(@RequestBody Map<String, Object> body) {
+    public ResponseEntity<Map<String, Object>> createTask(@RequestBody CreateTaskRequest body) {
         Map<String, Object> result = new HashMap<>();
         try {
-            String taskName = (String) body.getOrDefault("taskName", "未命名任务");
-            List<String> seedUrls = (List<String>) body.getOrDefault("seedUrls", Collections.emptyList());
-            int maxPages = (int) body.getOrDefault("maxPages", 100);
-            String proxyHost = (String) body.getOrDefault("proxyHost", com.searchengine.common.Config.PROXY_HOST);
-            int proxyPort = (int) body.getOrDefault("proxyPort", com.searchengine.common.Config.PROXY_PORT);
-            boolean useProxy = (boolean) body.getOrDefault("useProxy", true);
-
-            if (seedUrls.isEmpty()) {
+            List<String> seedUrls = body.getSeedUrls();
+            if (seedUrls == null || seedUrls.isEmpty()) {
                 seedUrls = Arrays.asList("https://www.baidu.com", "https://www.sina.com.cn", "https://www.qq.com");
             }
 
-            CrawlTask task = taskManager.createTask(taskName, seedUrls, maxPages, proxyHost, proxyPort, useProxy);
+            CrawlTask task = taskManager.createTask(
+                body.getTaskName() != null ? body.getTaskName() : "未命名任务",
+                seedUrls,
+                body.getMaxPages() > 0 ? body.getMaxPages() : 100,
+                body.getProxyHost() != null ? body.getProxyHost() : com.searchengine.common.Config.PROXY_HOST,
+                body.getProxyPort() > 0 ? body.getProxyPort() : com.searchengine.common.Config.PROXY_PORT,
+                body.isUseProxy()
+            );
             result.put("status", "success");
             result.put("task", taskToMap(task));
+            return ResponseEntity.ok(result);
         } catch (Exception e) {
+            logger.error("创建任务失败", e);
             result.put("status", "error");
             result.put("message", "创建任务失败: " + e.getMessage());
+            return ResponseEntity.internalServerError().body(result);
         }
-        return result;
     }
 
     /**
      * 更新任务
      * PUT /api/tasks/{taskId}
-     * Body: { "taskName": "xxx", "seedUrls": ["..."], "maxPages": 100, "proxyHost": "127.0.0.1", "proxyPort": 7890, "useProxy": true }
      */
     @PutMapping("/tasks/{taskId}")
-    public Map<String, Object> updateTask(@PathVariable String taskId, @RequestBody Map<String, Object> body) {
+    public ResponseEntity<Map<String, Object>> updateTask(@PathVariable String taskId,
+                                                          @RequestBody UpdateTaskRequest body) {
         Map<String, Object> result = new HashMap<>();
         try {
             CrawlTask task = taskManager.getTask(taskId);
             if (task == null) {
                 result.put("status", "error");
                 result.put("message", "任务不存在: " + taskId);
-                return result;
+                return ResponseEntity.status(404).body(result);
             }
 
             if (task.getStatus() == TaskStatus.RUNNING) {
                 result.put("status", "error");
                 result.put("message", "运行中的任务不能编辑");
-                return result;
+                return ResponseEntity.badRequest().body(result);
             }
 
-            String taskName = (String) body.getOrDefault("taskName", task.getTaskName());
-            List<String> seedUrls = (List<String>) body.getOrDefault("seedUrls", task.getSeedUrls());
-            int maxPages = (int) body.getOrDefault("maxPages", task.getMaxPages());
-
-            // 代理配置
-            String proxyHost = body.containsKey("proxyHost") ? (String) body.get("proxyHost") : null;
-            Integer proxyPort = body.containsKey("proxyPort") ? (Integer) body.get("proxyPort") : null;
-            Boolean useProxy = body.containsKey("useProxy") ? (Boolean) body.get("useProxy") : null;
+            String taskName = body.getTaskName() != null ? body.getTaskName() : task.getTaskName();
+            List<String> seedUrls = body.getSeedUrls() != null ? body.getSeedUrls() : task.getSeedUrls();
+            int maxPages = body.getMaxPages() > 0 ? body.getMaxPages() : task.getMaxPages();
 
             taskManager.updateTask(taskId, taskName, seedUrls, maxPages,
-                    proxyHost, proxyPort != null ? proxyPort : 0, useProxy);
+                    body.getProxyHost(), body.getProxyPort() != null ? body.getProxyPort() : 0, body.getUseProxy());
             result.put("status", "success");
             result.put("task", taskToMap(taskManager.getTask(taskId)));
+            return ResponseEntity.ok(result);
         } catch (Exception e) {
+            logger.error("更新任务失败: taskId={}", taskId, e);
             result.put("status", "error");
             result.put("message", "更新任务失败: " + e.getMessage());
+            return ResponseEntity.internalServerError().body(result);
         }
-        return result;
     }
 
     /**
@@ -105,7 +107,7 @@ public class SearchEngineController {
      * GET /api/tasks
      */
     @GetMapping("/tasks")
-    public Map<String, Object> listTasks() {
+    public ResponseEntity<Map<String, Object>> listTasks() {
         Map<String, Object> result = new HashMap<>();
         try {
             List<CrawlTask> tasks = taskManager.listTasks();
@@ -116,11 +118,13 @@ public class SearchEngineController {
             result.put("status", "success");
             result.put("tasks", taskList);
             result.put("runningCount", taskExecutor.getRunningCount());
+            return ResponseEntity.ok(result);
         } catch (Exception e) {
+            logger.error("获取任务列表失败", e);
             result.put("status", "error");
             result.put("message", "获取任务列表失败: " + e.getMessage());
+            return ResponseEntity.internalServerError().body(result);
         }
-        return result;
     }
 
     /**
@@ -128,22 +132,24 @@ public class SearchEngineController {
      * GET /api/tasks/{taskId}
      */
     @GetMapping("/tasks/{taskId}")
-    public Map<String, Object> getTask(@PathVariable String taskId) {
+    public ResponseEntity<Map<String, Object>> getTask(@PathVariable String taskId) {
         Map<String, Object> result = new HashMap<>();
         try {
             CrawlTask task = taskManager.getTask(taskId);
             if (task == null) {
                 result.put("status", "error");
                 result.put("message", "任务不存在: " + taskId);
-                return result;
+                return ResponseEntity.status(404).body(result);
             }
             result.put("status", "success");
             result.put("task", taskToMap(task));
+            return ResponseEntity.ok(result);
         } catch (Exception e) {
+            logger.error("获取任务失败: taskId={}", taskId, e);
             result.put("status", "error");
             result.put("message", "获取任务失败: " + e.getMessage());
+            return ResponseEntity.internalServerError().body(result);
         }
-        return result;
     }
 
     /**
@@ -151,22 +157,25 @@ public class SearchEngineController {
      * DELETE /api/tasks/{taskId}
      */
     @DeleteMapping("/tasks/{taskId}")
-    public Map<String, Object> deleteTask(@PathVariable String taskId) {
+    public ResponseEntity<Map<String, Object>> deleteTask(@PathVariable String taskId) {
         Map<String, Object> result = new HashMap<>();
         try {
             boolean deleted = taskManager.deleteTask(taskId);
             if (deleted) {
                 result.put("status", "success");
                 result.put("message", "任务已删除: " + taskId);
+                return ResponseEntity.ok(result);
             } else {
                 result.put("status", "error");
                 result.put("message", "删除任务失败: " + taskId);
+                return ResponseEntity.internalServerError().body(result);
             }
         } catch (Exception e) {
+            logger.error("删除任务失败: taskId={}", taskId, e);
             result.put("status", "error");
             result.put("message", "删除任务失败: " + e.getMessage());
+            return ResponseEntity.internalServerError().body(result);
         }
-        return result;
     }
 
     // ==================== 任务操作 API ====================
@@ -176,7 +185,7 @@ public class SearchEngineController {
      * POST /api/tasks/{taskId}/crawl
      */
     @PostMapping("/tasks/{taskId}/crawl")
-    public Map<String, Object> startCrawl(@PathVariable String taskId) {
+    public ResponseEntity<Map<String, Object>> startCrawl(@PathVariable String taskId) {
         return executeTaskAction(taskId, () -> taskExecutor.executeCrawl(taskId), "爬取");
     }
 
@@ -185,7 +194,7 @@ public class SearchEngineController {
      * POST /api/tasks/{taskId}/analyze
      */
     @PostMapping("/tasks/{taskId}/analyze")
-    public Map<String, Object> analyze(@PathVariable String taskId) {
+    public ResponseEntity<Map<String, Object>> analyze(@PathVariable String taskId) {
         return executeTaskAction(taskId, () -> taskExecutor.executeAnalyze(taskId), "分析");
     }
 
@@ -194,7 +203,7 @@ public class SearchEngineController {
      * POST /api/tasks/{taskId}/index
      */
     @PostMapping("/tasks/{taskId}/index")
-    public Map<String, Object> buildIndex(@PathVariable String taskId) {
+    public ResponseEntity<Map<String, Object>> buildIndex(@PathVariable String taskId) {
         return executeTaskAction(taskId, () -> taskExecutor.executeIndex(taskId), "索引构建");
     }
 
@@ -203,7 +212,7 @@ public class SearchEngineController {
      * POST /api/tasks/{taskId}/full
      */
     @PostMapping("/tasks/{taskId}/full")
-    public Map<String, Object> runFull(@PathVariable String taskId) {
+    public ResponseEntity<Map<String, Object>> runFull(@PathVariable String taskId) {
         return executeTaskAction(taskId, () -> taskExecutor.executeFull(taskId), "全流程");
     }
 
@@ -212,17 +221,19 @@ public class SearchEngineController {
      * POST /api/tasks/{taskId}/stop
      */
     @PostMapping("/tasks/{taskId}/stop")
-    public Map<String, Object> stopTask(@PathVariable String taskId) {
+    public ResponseEntity<Map<String, Object>> stopTask(@PathVariable String taskId) {
         Map<String, Object> result = new HashMap<>();
         try {
             taskExecutor.stopTask(taskId);
             result.put("status", "success");
             result.put("message", "任务已停止: " + taskId);
+            return ResponseEntity.ok(result);
         } catch (Exception e) {
+            logger.error("停止任务失败: taskId={}", taskId, e);
             result.put("status", "error");
             result.put("message", "停止任务失败: " + e.getMessage());
+            return ResponseEntity.internalServerError().body(result);
         }
-        return result;
     }
 
     /**
@@ -230,7 +241,7 @@ public class SearchEngineController {
      * GET /api/tasks/{taskId}/stats
      */
     @GetMapping("/tasks/{taskId}/stats")
-    public Map<String, Object> getStats(@PathVariable String taskId) {
+    public ResponseEntity<Map<String, Object>> getStats(@PathVariable String taskId) {
         Map<String, Object> result = new HashMap<>();
         try {
             TaskContext ctx = taskManager.getTaskContext(taskId);
@@ -243,11 +254,13 @@ public class SearchEngineController {
             result.put("crawledCount", task.getCrawledCount());
             result.put("analyzedCount", task.getAnalyzedCount());
             result.put("indexedTermCount", task.getIndexedTermCount());
+            return ResponseEntity.ok(result);
         } catch (Exception e) {
+            logger.error("获取统计信息失败: taskId={}", taskId, e);
             result.put("status", "error");
             result.put("message", "获取统计信息失败: " + e.getMessage());
+            return ResponseEntity.internalServerError().body(result);
         }
-        return result;
     }
 
     /**
@@ -255,15 +268,15 @@ public class SearchEngineController {
      * GET /api/tasks/{taskId}/logs
      */
     @GetMapping("/tasks/{taskId}/logs")
-    public Map<String, Object> getLogs(@PathVariable String taskId,
-                                       @RequestParam(defaultValue = "100") int limit) {
+    public ResponseEntity<Map<String, Object>> getLogs(@PathVariable String taskId,
+                                                       @RequestParam(defaultValue = "100") int limit) {
         Map<String, Object> result = new HashMap<>();
         try {
             CrawlTask task = taskManager.getTask(taskId);
             if (task == null) {
                 result.put("status", "error");
                 result.put("message", "任务不存在: " + taskId);
-                return result;
+                return ResponseEntity.status(404).body(result);
             }
 
             List<Map<String, String>> logs = new ArrayList<>();
@@ -305,11 +318,13 @@ public class SearchEngineController {
 
             result.put("status", "success");
             result.put("logs", logs);
+            return ResponseEntity.ok(result);
         } catch (Exception e) {
+            logger.error("获取日志失败: taskId={}", taskId, e);
             result.put("status", "error");
             result.put("message", "获取日志失败: " + e.getMessage());
+            return ResponseEntity.internalServerError().body(result);
         }
-        return result;
     }
 
     private String formatTime(long timestamp) {
@@ -324,11 +339,17 @@ public class SearchEngineController {
      * GET /api/tasks/{taskId}/search?query=xxx&page=1
      */
     @GetMapping("/tasks/{taskId}/search")
-    public Map<String, Object> search(@PathVariable String taskId,
-                                      @RequestParam String query,
-                                      @RequestParam(defaultValue = "1") int page) {
+    public ResponseEntity<Map<String, Object>> search(@PathVariable String taskId,
+                                                      @RequestParam String query,
+                                                      @RequestParam(defaultValue = "1") int page) {
         Map<String, Object> result = new HashMap<>();
         try {
+            if (query == null || query.isBlank()) {
+                result.put("status", "error");
+                result.put("message", "查询词不能为空");
+                return ResponseEntity.badRequest().body(result);
+            }
+
             TaskContext ctx = taskManager.getTaskContext(taskId);
             List<SearchResult> results = ctx.getSearchEngine().search(query, page);
             int totalCount = ctx.getSearchEngine().getTotalMatchCount(query);
@@ -338,11 +359,13 @@ public class SearchEngineController {
             result.put("page", page);
             result.put("totalCount", totalCount);
             result.put("results", results);
+            return ResponseEntity.ok(result);
         } catch (Exception e) {
+            logger.error("搜索失败: taskId={}, query={}", taskId, query, e);
             result.put("status", "error");
             result.put("message", "搜索失败: " + e.getMessage());
+            return ResponseEntity.internalServerError().body(result);
         }
-        return result;
     }
 
     /**
@@ -350,8 +373,8 @@ public class SearchEngineController {
      * GET /api/tasks/{taskId}/keywords?limit=20
      */
     @GetMapping("/tasks/{taskId}/keywords")
-    public Map<String, Object> getKeywords(@PathVariable String taskId,
-                                           @RequestParam(defaultValue = "20") int limit) {
+    public ResponseEntity<Map<String, Object>> getKeywords(@PathVariable String taskId,
+                                                           @RequestParam(defaultValue = "20") int limit) {
         Map<String, Object> result = new HashMap<>();
         try {
             TaskContext ctx = taskManager.getTaskContext(taskId);
@@ -359,11 +382,13 @@ public class SearchEngineController {
 
             result.put("status", "success");
             result.put("keywords", keywords);
+            return ResponseEntity.ok(result);
         } catch (Exception e) {
+            logger.error("获取关键词失败: taskId={}", taskId, e);
             result.put("status", "error");
             result.put("message", "获取关键词失败: " + e.getMessage());
+            return ResponseEntity.internalServerError().body(result);
         }
-        return result;
     }
 
     // ==================== 辅助方法 ====================
@@ -371,36 +396,38 @@ public class SearchEngineController {
     /**
      * 执行任务操作的通用方法
      */
-    private Map<String, Object> executeTaskAction(String taskId, Runnable action, String actionName) {
+    private ResponseEntity<Map<String, Object>> executeTaskAction(String taskId, Runnable action, String actionName) {
         Map<String, Object> result = new HashMap<>();
         try {
             CrawlTask task = taskManager.getTask(taskId);
             if (task == null) {
                 result.put("status", "error");
                 result.put("message", "任务不存在: " + taskId);
-                return result;
+                return ResponseEntity.status(404).body(result);
             }
 
             if (task.getStatus() == TaskStatus.RUNNING) {
                 result.put("status", "error");
                 result.put("message", "任务正在运行中: " + taskId);
-                return result;
+                return ResponseEntity.badRequest().body(result);
             }
 
             if (!taskExecutor.canSubmit()) {
                 result.put("status", "error");
                 result.put("message", "任务队列已满，请稍后再试");
-                return result;
+                return ResponseEntity.status(503).body(result);
             }
 
             action.run();
             result.put("status", "started");
             result.put("message", actionName + "任务已启动");
+            return ResponseEntity.ok(result);
         } catch (Exception e) {
+            logger.error("启动{}失败: taskId={}", actionName, taskId, e);
             result.put("status", "error");
             result.put("message", "启动" + actionName + "失败: " + e.getMessage());
+            return ResponseEntity.internalServerError().body(result);
         }
-        return result;
     }
 
     /**

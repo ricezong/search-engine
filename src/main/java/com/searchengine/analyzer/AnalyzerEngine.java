@@ -4,7 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.sql.*;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -26,6 +26,8 @@ public class AnalyzerEngine {
     private final Tokenizer tokenizer;
     private final Connection conn;
     private final AtomicInteger termIdCounter;
+    // term缓存：避免每次分词都查询数据库，提升性能
+    private final Map<String, Integer> termCache = new HashMap<>();
 
     /**
      * 创建分析引擎
@@ -37,6 +39,7 @@ public class AnalyzerEngine {
         this.tokenizer = new Tokenizer();
         this.conn = conn;
         this.termIdCounter = new AtomicInteger(initTermIdCounter());
+        loadTermCache();
     }
 
     /**
@@ -55,6 +58,22 @@ public class AnalyzerEngine {
             logger.error("初始化term_id计数器失败", e);
         }
         return 1;
+    }
+
+    /**
+     * 加载term缓存
+     */
+    private void loadTermCache() {
+        String sql = "SELECT term_id, term FROM term_id_map";
+        try (Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                termCache.put(rs.getString("term"), rs.getInt("term_id"));
+            }
+            logger.info("加载term缓存完成，共{}个词", termCache.size());
+        } catch (SQLException e) {
+            logger.error("加载term缓存失败", e);
+        }
     }
 
     /**
@@ -230,18 +249,19 @@ public class AnalyzerEngine {
 
     /**
      * 从文件中读取HTML内容
+     * 使用lastIndexOf(":")安全分割，兼容Windows路径（如 E:\path\...）
      */
     private String readHtmlFromFile(String filePath, String url) {
         try {
             // filePath格式: data/tasks/{taskId}/doc_raw/doc_raw_0.bin:12345
-            String[] parts = filePath.split(":");
-            if (parts.length < 2) {
-                logger.error("文件路径格式错误: {}", filePath);
+            // 使用lastIndexOf安全分割，避免Windows路径中的冒号误分割
+            int lastColon = filePath.lastIndexOf(':');
+            if (lastColon <= 0) {
+                logger.error("文件路径格式错误（缺少偏移量）: {}", filePath);
                 return null;
             }
-            // 重新拼接（Windows路径可能包含冒号）
-            String filePart = parts[0];
-            long offset = Long.parseLong(parts[parts.length - 1]);
+            String filePart = filePath.substring(0, lastColon);
+            long offset = Long.parseLong(filePath.substring(lastColon + 1));
 
             String[] result = com.searchengine.common.FileUtil.readDocRaw(filePart, offset);
             return result[1]; // content
@@ -253,21 +273,29 @@ public class AnalyzerEngine {
 
     /**
      * 获取或创建term_id
-     * 先查SQLite，不存在则分配新编号
+     * 先查缓存，再查数据库，最后创建新编号
      */
     private int getOrCreateTermId(String term) throws SQLException {
-        // 先查询
+        // 1. 先查缓存
+        Integer cachedId = termCache.get(term);
+        if (cachedId != null) {
+            return cachedId;
+        }
+
+        // 2. 缓存未命中，查数据库
         String querySql = "SELECT term_id FROM term_id_map WHERE term = ?";
         try (PreparedStatement ps = conn.prepareStatement(querySql)) {
             ps.setString(1, term);
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
-                    return rs.getInt("term_id");
+                    int id = rs.getInt("term_id");
+                    termCache.put(term, id);
+                    return id;
                 }
             }
         }
 
-        // 不存在，创建新的
+        // 3. 不存在，创建新的
         int termId = termIdCounter.getAndIncrement();
         String insertSql = "INSERT INTO term_id_map (term_id, term) VALUES (?, ?)";
         try (PreparedStatement ps = conn.prepareStatement(insertSql)) {
@@ -275,6 +303,7 @@ public class AnalyzerEngine {
             ps.setString(2, term);
             ps.executeUpdate();
         }
+        termCache.put(term, termId);
         return termId;
     }
 

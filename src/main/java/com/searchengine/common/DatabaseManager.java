@@ -170,8 +170,9 @@ public class DatabaseManager {
     /**
      * 获取数据库连接
      * 如果连接已关闭则重新创建
+     * 使用synchronized确保线程安全
      */
-    public Connection getConnection() throws SQLException {
+    public synchronized Connection getConnection() throws SQLException {
         if (connection == null || connection.isClosed()) {
             String dbUrl = "jdbc:sqlite:" + dbFile;
             connection = DriverManager.getConnection(dbUrl);

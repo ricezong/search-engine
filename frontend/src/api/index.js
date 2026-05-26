@@ -1,11 +1,21 @@
 import axios from 'axios'
+import { ElMessage } from 'element-plus'
 
 const api = axios.create({
   baseURL: '/api',
   timeout: 30000
 })
 
-// 任务管理
+api.interceptors.response.use(
+    (response) => response,
+    (error) => {
+      const message = error.response?.data?.message || error.message || '请求失败'
+      console.error('API Error:', message)
+      ElMessage.error(message)
+      return Promise.reject(error)
+    }
+)
+
 export function listTasks() {
   return api.get('/tasks')
 }
@@ -26,7 +36,6 @@ export function deleteTask(taskId) {
   return api.delete(`/tasks/${taskId}`)
 }
 
-// 任务操作
 export function startCrawl(taskId) {
   return api.post(`/tasks/${taskId}/crawl`)
 }
@@ -55,12 +64,12 @@ export function getTaskLogs(taskId) {
   return api.get(`/tasks/${taskId}/logs`)
 }
 
-// 搜索
 export function search(taskId, query, page = 1) {
   return api.get(`/tasks/${taskId}/search`, { params: { query, page } })
 }
 
-// 热门关键词
 export function getKeywords(taskId, limit = 20) {
   return api.get(`/tasks/${taskId}/keywords`, { params: { limit } })
 }
+
+export default api

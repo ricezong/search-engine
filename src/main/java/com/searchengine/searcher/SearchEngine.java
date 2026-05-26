@@ -165,6 +165,7 @@ public class SearchEngine {
 
     /**
      * 对查询文本进行分词
+     * 使用LinkedHashSet去重，时间复杂度O(1)，替代List.contains的O(n)
      */
     private List<String> tokenizeQuery(String query) {
         if (query == null || query.isBlank()) {
@@ -172,17 +173,15 @@ public class SearchEngine {
         }
 
         List<Term> terms = HanLP.segment(query);
-        List<String> result = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
 
         for (Term term : terms) {
             String word = term.word.trim().toLowerCase();
             if (word.length() >= Config.MIN_TERM_LENGTH && !isPunctuation(word)) {
-                if (!result.contains(word)) {
-                    result.add(word);
-                }
+                seen.add(word);
             }
         }
-        return result;
+        return new ArrayList<>(seen);
     }
 
     /**

@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -38,6 +39,31 @@ public class TaskManager {
     @PostConstruct
     public void init() {
         initMasterDatabase();
+    }
+
+    @PreDestroy
+    public void destroy() {
+        logger.info("关闭TaskManager，释放资源...");
+        // 关闭所有活跃上下文
+        for (Map.Entry<String, TaskContext> entry : activeContexts.entrySet()) {
+            try {
+                entry.getValue().close();
+            } catch (Exception e) {
+                logger.error("关闭任务上下文失败: {}", entry.getKey(), e);
+            }
+        }
+        activeContexts.clear();
+        // 关闭master数据库连接
+        if (masterConn != null) {
+            try {
+                if (!masterConn.isClosed()) {
+                    masterConn.close();
+                    logger.info("Master数据库连接已关闭");
+                }
+            } catch (SQLException e) {
+                logger.error("关闭Master数据库连接失败", e);
+            }
+        }
     }
 
     /**
