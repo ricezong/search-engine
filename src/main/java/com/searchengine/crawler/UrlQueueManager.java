@@ -115,8 +115,8 @@ public class UrlQueueManager {
      * 使用synchronized确保原子性，避免并发超量添加
      */
     public synchronized int addNewUrls(List<String> urls, int depth, BloomFilterManager bloomFilter, int maxPages) {
-        // 计算当前所有URL的总数：已爬取 + 待爬取 + 正在爬取中
-        int totalNow = getCrawledCount() + getPendingCount() + getCrawlingCount();
+        // 计算当前所有URL的总数：已处理（已爬取+失败） + 待爬取 + 正在爬取中
+        int totalNow = getProcessedCount() + getPendingCount() + getCrawlingCount();
         int canAdd = Math.max(0, maxPages - totalNow);
         if (canAdd <= 0) {
             return 0;
@@ -193,6 +193,38 @@ public class UrlQueueManager {
             }
         } catch (SQLException e) {
             logger.error("获取已爬取URL数量失败", e);
+        }
+        return 0;
+    }
+
+    /**
+     * 获取失败URL数量
+     */
+    public int getFailedCount() {
+        String sql = "SELECT COUNT(*) FROM url_queue WHERE status = 'FAILED'";
+        try (Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            if (rs.next()) {
+                return rs.getInt(1);
+            }
+        } catch (SQLException e) {
+            logger.error("获取失败URL数量失败", e);
+        }
+        return 0;
+    }
+
+    /**
+     * 获取已处理URL数量（已爬取 + 失败）
+     */
+    public int getProcessedCount() {
+        String sql = "SELECT COUNT(*) FROM url_queue WHERE status IN ('CRAWLED', 'FAILED')";
+        try (Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            if (rs.next()) {
+                return rs.getInt(1);
+            }
+        } catch (SQLException e) {
+            logger.error("获取已处理URL数量失败", e);
         }
         return 0;
     }

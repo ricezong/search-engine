@@ -30,6 +30,12 @@ public class Config {
     /** 单个网页存储文件最大大小（1GB） */
     public static final long DOC_RAW_FILE_MAX_SIZE = 1024L * 1024 * 1024;
 
+    // ==================== 代理配置 ====================
+    /** 代理主机（mihomo） */
+    public static final String PROXY_HOST = "127.0.0.1";
+    /** 代理端口（mihomo HTTP代理） */
+    public static final int PROXY_PORT = 7890;
+
     // ==================== 布隆过滤器配置 ====================
     /** 布隆过滤器预期插入量 */
     public static final int BLOOM_FILTER_EXPECTED_INSERTIONS = 10_000_000;

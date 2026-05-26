@@ -2,7 +2,7 @@
   <div class="task-list-page">
     <div class="page-header">
       <h2>任务管理</h2>
-      <el-button type="primary" @click="showCreateDialog = true">
+      <el-button type="primary" @click="openCreate">
         <el-icon><Plus /></el-icon> 新建任务
       </el-button>
     </div>
@@ -19,12 +19,12 @@
             <span class="task-name">{{ task.taskName }}</span>
             <el-tag :type="statusType(task.status)" size="small">{{ statusLabel(task.status) }}</el-tag>
           </div>
-          <span class="task-id">#{{ task.taskId }}</span>
+          <span class="task-id">#{{ task.taskId.slice(0, 8) }}</span>
         </div>
 
         <div class="task-info">
           <div class="info-item">
-            <span class="info-label">最大页面数</span>
+            <span class="info-label">最大页面</span>
             <span class="info-value">{{ task.maxPages }}</span>
           </div>
           <div class="info-item">
@@ -36,7 +36,7 @@
             <span class="info-value">{{ task.analyzedCount }}</span>
           </div>
           <div class="info-item">
-            <span class="info-label">索引词数</span>
+            <span class="info-label">索引词</span>
             <span class="info-value">{{ task.indexedTermCount }}</span>
           </div>
         </div>
@@ -54,14 +54,21 @@
         </div>
 
         <div class="task-actions">
-          <el-button size="small" type="success" :disabled="task.status === 'RUNNING'" @click="doAction(task.taskId, 'full')">全流程</el-button>
-          <el-button size="small" :disabled="task.status === 'RUNNING'" @click="doAction(task.taskId, 'crawl')">爬取</el-button>
-          <el-button size="small" :disabled="task.status === 'RUNNING'" @click="doAction(task.taskId, 'analyze')">分析</el-button>
-          <el-button size="small" :disabled="task.status === 'RUNNING'" @click="doAction(task.taskId, 'index')">索引</el-button>
-          <el-button v-if="task.status === 'RUNNING'" size="small" type="warning" @click="doStop(task.taskId)">停止</el-button>
-          <el-button size="small" type="primary" @click="router.push(`/tasks/${task.taskId}`)">详情</el-button>
-          <el-button size="small" type="info" @click="router.push(`/search?taskId=${task.taskId}`)">搜索</el-button>
-          <el-button size="small" type="danger" :disabled="task.status === 'RUNNING'" @click="doDelete(task.taskId)">删除</el-button>
+          <el-button size="small" type="success" :disabled="task.status === 'RUNNING'" @click="doAction(task)">
+            <el-icon><VideoPlay /></el-icon> 开始挖掘
+          </el-button>
+          <el-button size="small" type="primary" @click="router.push(`/tasks/${task.taskId}`)">
+            <el-icon><View /></el-icon> 详情
+          </el-button>
+          <el-button size="small" type="info" @click="router.push(`/search?taskId=${task.taskId}`)">
+            <el-icon><Search /></el-icon> 搜索
+          </el-button>
+          <el-button size="small" :disabled="task.status === 'RUNNING'" @click="openEdit(task)">
+            <el-icon><Edit /></el-icon> 编辑
+          </el-button>
+          <el-button size="small" type="danger" :disabled="task.status === 'RUNNING'" @click="doDelete(task.taskId)">
+            <el-icon><Delete /></el-icon> 删除
+          </el-button>
         </div>
 
         <div class="task-time">
@@ -70,27 +77,36 @@
       </el-card>
     </div>
 
-    <!-- 新建任务对话框 -->
-    <el-dialog v-model="showCreateDialog" title="新建任务" width="560px">
-      <el-form :model="createForm" label-width="100px">
+    <!-- 新建/编辑任务对话框 -->
+    <el-dialog v-model="showDialog" :title="isEdit ? '编辑任务' : '新建任务'" width="560px" class="task-dialog">
+      <el-form :model="form" label-width="100px">
         <el-form-item label="任务名称">
-          <el-input v-model="createForm.taskName" placeholder="输入任务名称" />
+          <el-input v-model="form.taskName" placeholder="输入任务名称" />
         </el-form-item>
         <el-form-item label="种子URL">
           <el-input
-            v-model="createForm.seedUrlsText"
+            v-model="form.seedUrlsText"
             type="textarea"
             :rows="4"
             placeholder="每行一个URL，留空使用默认种子"
           />
         </el-form-item>
         <el-form-item label="最大页面数">
-          <el-input-number v-model="createForm.maxPages" :min="1" :max="100000" />
+          <el-input-number v-model="form.maxPages" :min="1" :max="100000" />
+        </el-form-item>
+        <el-divider content-position="left">代理配置</el-divider>
+        <el-form-item label="启用代理">
+          <el-switch v-model="form.useProxy" />
+        </el-form-item>
+        <el-form-item v-if="form.useProxy" label="代理地址">
+          <el-input v-model="form.proxyHost" placeholder="127.0.0.1" style="width: 60%" />
+          <span style="margin: 0 8px">:</span>
+          <el-input-number v-model="form.proxyPort" :min="1" :max="65535" style="width: 35%" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showCreateDialog = false">取消</el-button>
-        <el-button type="primary" :loading="creating" @click="doCreate">创建</el-button>
+        <el-button @click="showDialog = false">取消</el-button>
+        <el-button type="primary" :loading="submitting" @click="doSubmit">{{ isEdit ? '保存' : '创建' }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -99,20 +115,25 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, VideoPlay, View, Search, Edit, Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import * as api from '../api'
 
 const router = useRouter()
 const tasks = ref([])
-const showCreateDialog = ref(false)
-const creating = ref(false)
+const showDialog = ref(false)
+const isEdit = ref(false)
+const submitting = ref(false)
+const editTaskId = ref('')
 let refreshTimer = null
 
-const createForm = ref({
+const form = ref({
   taskName: '',
   seedUrlsText: '',
-  maxPages: 100
+  maxPages: 100,
+  proxyHost: '127.0.0.1',
+  proxyPort: 7890,
+  useProxy: true
 })
 
 function statusType(status) {
@@ -130,6 +151,34 @@ function formatTime(ts) {
   return new Date(ts).toLocaleString('zh-CN')
 }
 
+function openCreate() {
+  isEdit.value = false
+  editTaskId.value = ''
+  form.value = {
+    taskName: '',
+    seedUrlsText: '',
+    maxPages: 100,
+    proxyHost: '127.0.0.1',
+    proxyPort: 7890,
+    useProxy: true
+  }
+  showDialog.value = true
+}
+
+function openEdit(task) {
+  isEdit.value = true
+  editTaskId.value = task.taskId
+  form.value = {
+    taskName: task.taskName,
+    seedUrlsText: (task.seedUrls || []).join('\n'),
+    maxPages: task.maxPages,
+    proxyHost: task.proxyHost || '127.0.0.1',
+    proxyPort: task.proxyPort || 7890,
+    useProxy: task.useProxy !== false
+  }
+  showDialog.value = true
+}
+
 async function loadTasks() {
   try {
     const res = await api.listTasks()
@@ -141,69 +190,55 @@ async function loadTasks() {
   }
 }
 
-async function doCreate() {
-  creating.value = true
+async function doSubmit() {
+  submitting.value = true
   try {
-    const seedUrls = createForm.value.seedUrlsText
+    const seedUrls = form.value.seedUrlsText
       .split('\n')
       .map(s => s.trim())
       .filter(s => s.length > 0)
 
-    const res = await api.createTask({
-      taskName: createForm.value.taskName || '未命名任务',
+    const data = {
+      taskName: form.value.taskName || '未命名任务',
       seedUrls,
-      maxPages: createForm.value.maxPages
-    })
+      maxPages: form.value.maxPages,
+      proxyHost: form.value.proxyHost || '127.0.0.1',
+      proxyPort: form.value.proxyPort || 7890,
+      useProxy: form.value.useProxy
+    }
+
+    let res
+    if (isEdit.value) {
+      res = await api.updateTask(editTaskId.value, data)
+    } else {
+      res = await api.createTask(data)
+    }
 
     if (res.data.status === 'success') {
-      ElMessage.success('任务创建成功')
-      showCreateDialog.value = false
-      createForm.value = { taskName: '', seedUrlsText: '', maxPages: 100 }
+      ElMessage.success(isEdit.value ? '任务已更新' : '任务创建成功')
+      showDialog.value = false
       loadTasks()
-    } else {
-      ElMessage.error(res.data.message || '创建失败')
-    }
-  } catch (e) {
-    ElMessage.error('创建任务失败')
-  } finally {
-    creating.value = false
-  }
-}
-
-async function doAction(taskId, action) {
-  try {
-    const actionMap = {
-      crawl: api.startCrawl,
-      analyze: api.startAnalyze,
-      index: api.startIndex,
-      full: api.startFull
-    }
-    const fn = actionMap[action]
-    if (!fn) {
-      ElMessage.error('未知操作: ' + action)
-      return
-    }
-    const res = await fn(taskId)
-    if (res.data.status === 'started') {
-      ElMessage.success(res.data.message)
-      setTimeout(loadTasks, 500)
     } else {
       ElMessage.error(res.data.message || '操作失败')
     }
   } catch (e) {
     ElMessage.error('操作失败: ' + (e.response?.data?.message || e.message))
+  } finally {
+    submitting.value = false
   }
 }
 
-async function doStop(taskId) {
+async function doAction(task) {
   try {
-    const res = await api.stopTask(taskId)
-    if (res.data.status === 'success') {
-      ElMessage.success('任务已停止')
-      loadTasks()
+    const res = await api.startFull(task.taskId)
+    if (res.data.status === 'started') {
+      ElMessage.success('开始挖掘')
+      router.push(`/tasks/${task.taskId}`)
+    } else {
+      ElMessage.error(res.data.message || '启动失败')
     }
   } catch (e) {
-    ElMessage.error('停止失败')
+    ElMessage.error('启动失败: ' + (e.response?.data?.message || e.message))
   }
 }
 
@@ -335,5 +370,41 @@ onUnmounted(() => {
 
 .empty-state {
   padding: 60px 0;
+}
+
+/* 手机端适配 */
+@media (max-width: 768px) {
+  .page-header {
+    flex-direction: column;
+    gap: 12px;
+    align-items: stretch;
+  }
+
+  .page-header h2 {
+    text-align: center;
+  }
+
+  .task-info {
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: space-around;
+  }
+
+  .info-value {
+    font-size: 16px;
+  }
+
+  .task-actions {
+    justify-content: center;
+  }
+
+  .task-urls {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .url-tag {
+    max-width: 100%;
+  }
 }
 </style>

@@ -18,6 +18,19 @@
           </template>
         </el-input>
       </div>
+      <div v-if="keywords.length > 0" class="keywords-bar">
+        <span class="keywords-label">热门关键词：</span>
+        <el-tag
+          v-for="word in keywords"
+          :key="word"
+          size="small"
+          class="keyword-tag"
+          @click="searchKeyword(word)"
+          effect="plain"
+        >
+          {{ word }}
+        </el-tag>
+      </div>
     </div>
 
     <div v-if="searched && results.length === 0 && !loading" class="no-results">
@@ -67,6 +80,7 @@ const totalCount = ref(0)
 const currentPage = ref(1)
 const loading = ref(false)
 const searched = ref(false)
+const keywords = ref([])
 
 async function loadTasks() {
   try {
@@ -77,6 +91,7 @@ async function loadTasks() {
       const taskIdParam = route.query.taskId
       if (taskIdParam && tasks.value.some(t => t.taskId === taskIdParam)) {
         selectedTaskId.value = taskIdParam
+        loadKeywords()
       }
     }
   } catch (e) {
@@ -84,10 +99,32 @@ async function loadTasks() {
   }
 }
 
+async function loadKeywords() {
+  if (!selectedTaskId.value) {
+    keywords.value = []
+    return
+  }
+  try {
+    const res = await api.getKeywords(selectedTaskId.value, 20)
+    if (res.data.status === 'success') {
+      keywords.value = res.data.keywords || []
+    }
+  } catch (e) {
+    console.error('加载关键词失败', e)
+    keywords.value = []
+  }
+}
+
 function onTaskChange() {
   results.value = []
   totalCount.value = 0
   searched.value = false
+  loadKeywords()
+}
+
+function searchKeyword(word) {
+  query.value = word
+  doSearch()
 }
 
 async function doSearch() {
@@ -138,6 +175,30 @@ onMounted(() => {
 .search-bar {
   display: flex;
   gap: 12px;
+}
+
+.keywords-bar {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.keywords-label {
+  color: #909399;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.keyword-tag {
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.keyword-tag:hover {
+  color: #409eff;
+  border-color: #409eff;
 }
 
 .results-info {

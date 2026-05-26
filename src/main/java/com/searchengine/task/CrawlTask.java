@@ -19,6 +19,9 @@ public class CrawlTask {
     private long createTime;
     private long updateTime;
     private String errorMessage;
+    private String proxyHost;
+    private int proxyPort;
+    private boolean useProxy;
 
     public CrawlTask() {
     }
@@ -34,6 +37,10 @@ public class CrawlTask {
         this.indexedTermCount = 0;
         this.createTime = System.currentTimeMillis();
         this.updateTime = System.currentTimeMillis();
+        // 默认代理配置
+        this.proxyHost = com.searchengine.common.Config.PROXY_HOST;
+        this.proxyPort = com.searchengine.common.Config.PROXY_PORT;
+        this.useProxy = true;
     }
 
     public String getTaskId() {
@@ -124,5 +131,29 @@ public class CrawlTask {
     public void setErrorMessage(String errorMessage) {
         this.errorMessage = errorMessage;
         this.updateTime = System.currentTimeMillis();
+    }
+
+    public String getProxyHost() {
+        return proxyHost;
+    }
+
+    public void setProxyHost(String proxyHost) {
+        this.proxyHost = proxyHost;
+    }
+
+    public int getProxyPort() {
+        return proxyPort;
+    }
+
+    public void setProxyPort(int proxyPort) {
+        this.proxyPort = proxyPort;
+    }
+
+    public boolean isUseProxy() {
+        return useProxy;
+    }
+
+    public void setUseProxy(boolean useProxy) {
+        this.useProxy = useProxy;
     }
 }

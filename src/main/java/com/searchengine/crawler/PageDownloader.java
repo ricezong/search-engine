@@ -57,19 +57,43 @@ public class PageDownloader {
     }
 
     /**
-     * 下载网页并解析
+     * 下载网页并解析（使用默认代理配置）
      *
      * @param url 网页URL
      * @return 下载结果，失败返回null
      */
     public DownloadResult download(String url) {
+        return download(url, null, 0, true);
+    }
+
+    /**
+     * 下载网页并解析（指定代理配置）
+     *
+     * @param url 网页URL
+     * @param proxyHost 代理主机
+     * @param proxyPort 代理端口
+     * @param useProxy 是否使用代理
+     * @return 下载结果，失败返回null
+     */
+    public DownloadResult download(String url, String proxyHost, int proxyPort, boolean useProxy) {
         try {
-            Document doc = Jsoup.connect(url)
+            // 检查是否需要使用代理
+            boolean shouldUseProxy = useProxy && proxyHost != null && !proxyHost.isEmpty() && proxyPort > 0;
+
+            var connection = Jsoup.connect(url)
                     .userAgent(com.searchengine.common.Config.CRAWLER_USER_AGENT)
                     .timeout(com.searchengine.common.Config.CRAWLER_TIMEOUT_MS)
                     .followRedirects(true)
-                    .maxBodySize(5 * 1024 * 1024) // 最大5MB
-                    .get();
+                    .maxBodySize(5 * 1024 * 1024); // 最大5MB
+
+            if (shouldUseProxy) {
+                connection.proxy(proxyHost, proxyPort);
+                logger.info("使用代理访问: {}:{}", proxyHost, proxyPort);
+            } else {
+                logger.info("直连访问: {}", url);
+            }
+
+            Document doc = connection.get();
 
             String title = doc.title();
             if (title == null || title.isBlank()) {
@@ -82,8 +106,8 @@ public class PageDownloader {
             logger.debug("下载网页成功: url={}, title={}, links={}", url, title, links.size());
             return new DownloadResult(url, title, doc.html(), links);
 
-        } catch (IOException e) {
-            logger.warn("下载网页失败: url={}, error={}", url, e.getMessage());
+        } catch (Exception e) {
+            logger.error("下载网页失败: url={}, error={}", url, e.getMessage(), e);
             return null;
         }
     }
@@ -150,14 +174,48 @@ public class PageDownloader {
 
     /**
      * 从URL中提取标题作为后备
+     * 返回完整URL，而非仅host
      */
     private String extractTitleFromUrl(String url) {
-        try {
-            URI uri = new URI(url);
-            String host = uri.getHost();
-            return host != null ? host : url;
-        } catch (URISyntaxException e) {
-            return url;
+        return url != null ? url : "";
+    }
+
+    /**
+     * 判断是否为国外域名（需要代理）
+     */
+    private boolean isForeignUrl(String url) {
+        if (url == null) return false;
+        String lower = url.toLowerCase();
+        // 国外常见域名后缀和网站
+        String[] foreignDomains = {
+            ".com", ".org", ".net", ".io", ".co", ".dev",
+            "youtube.com", "google.com", "twitter.com", "x.com",
+            "facebook.com", "instagram.com", "github.com",
+            "wikipedia.org", "reddit.com", "medium.com",
+            "stackoverflow.com", "linkedin.com", "amazon.com"
+        };
+
+        // 排除国内网站
+        String[] domesticDomains = {
+            ".cn", ".com.cn", ".net.cn", ".org.cn",
+            "baidu.com", "qq.com", "taobao.com", "jd.com",
+            "sina.com", "weibo.com", "zhihu.com", "bilibili.com",
+            "douyin.com", "tencent.com", "alibaba.com",
+            "163.com", "126.com", "sohu.com", "csdn.net"
+        };
+
+        for (String domain : domesticDomains) {
+            if (lower.contains(domain)) {
+                return false;
+            }
         }
+
+        for (String domain : foreignDomains) {
+            if (lower.contains(domain)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

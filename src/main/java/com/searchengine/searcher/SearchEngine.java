@@ -288,4 +288,33 @@ public class SearchEngine {
         }
         return matchedDocs.size();
     }
+
+    /**
+     * 获取热门关键词（按倒排索引中的文档数排序）
+     *
+     * @param limit 返回数量
+     * @return 关键词列表
+     */
+    public List<String> getTopKeywords(int limit) {
+        init(); // 确保缓存已加载
+
+        String sql = "SELECT t.term, o.length FROM term_id_map t " +
+                "JOIN term_offset o ON t.term_id = o.term_id " +
+                "ORDER BY o.length DESC LIMIT ?";
+        List<String> keywords = new ArrayList<>();
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, limit);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    String term = rs.getString("term");
+                    if (term != null && !term.isBlank()) {
+                        keywords.add(term);
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            logger.error("获取热门关键词失败", e);
+        }
+        return keywords;
+    }
 }

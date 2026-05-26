@@ -31,6 +31,11 @@ public class CrawlerEngine {
     private volatile ExecutorService executor;
     private volatile int maxPages;
 
+    // 代理配置
+    private String proxyHost;
+    private int proxyPort;
+    private boolean useProxy;
+
     // 已提交的任务计数（poll出并提交到线程池）
     private final AtomicInteger dispatchedCount = new AtomicInteger(0);
     // 已完成的任务计数（processTask执行完毕并markCrawled）
@@ -52,6 +57,19 @@ public class CrawlerEngine {
         this.bloomFilter = bloomFilter;
         this.docStorage = docStorage;
         this.downloader = downloader;
+        // 默认代理配置
+        this.proxyHost = Config.PROXY_HOST;
+        this.proxyPort = Config.PROXY_PORT;
+        this.useProxy = true;
+    }
+
+    /**
+     * 设置代理配置
+     */
+    public void setProxyConfig(String proxyHost, int proxyPort, boolean useProxy) {
+        this.proxyHost = proxyHost;
+        this.proxyPort = proxyPort;
+        this.useProxy = useProxy;
     }
 
     /**
@@ -184,9 +202,11 @@ public class CrawlerEngine {
             bloomFilter.persist();
             running.set(false);
             logger.info("========== 爬虫停止 ==========");
-            logger.info("统计: 已提交={}, 已完成={}, 数据库已爬取={}, 待爬取={}, 已存储文档={}",
+            logger.info("统计: 已提交={}, 已完成={}, 数据库已处理={}, 已爬取={}, 失败={}, 待爬取={}, 已存储文档={}",
                     dispatchedCount.get(), completedCount.get(),
-                    urlQueue.getCrawledCount(), urlQueue.getPendingCount(),
+                    urlQueue.getProcessedCount(),
+                    urlQueue.getCrawledCount(), urlQueue.getFailedCount(),
+                    urlQueue.getPendingCount(),
                     docStorage.getTotalDocCount());
         }
     }
@@ -205,7 +225,7 @@ public class CrawlerEngine {
         logger.info("爬取: {} (depth={})", url, task.getDepth());
 
         // 下载网页
-        PageDownloader.DownloadResult result = downloader.download(url);
+        PageDownloader.DownloadResult result = downloader.download(url, proxyHost, proxyPort, useProxy);
         if (result == null) {
             urlQueue.markFailed(task.getId());
             return;
@@ -270,9 +290,10 @@ public class CrawlerEngine {
      * 获取爬取统计信息
      */
     public String getStats() {
-        return String.format("待爬取: %d, 已爬取: %d, 已存储文档: %d",
+        return String.format("待爬取: %d, 已爬取: %d, 失败: %d, 已存储文档: %d",
                 urlQueue.getPendingCount(),
                 urlQueue.getCrawledCount(),
+                urlQueue.getFailedCount(),
                 docStorage.getTotalDocCount());
     }
 }

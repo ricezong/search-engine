@@ -34,6 +34,7 @@ const activeMenu = computed(() => route.path)
 body {
   font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
   background-color: #f5f7fa;
+  overflow-x: hidden;
 }
 
 .app-container {
@@ -46,6 +47,8 @@ body {
   align-items: center;
   padding: 0 20px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  height: auto !important;
+  min-height: 60px;
 }
 
 .header-content {
@@ -85,5 +88,67 @@ body {
   margin: 0 auto;
   width: 100%;
   padding: 20px;
+}
+
+/* 全局响应式 */
+@media (max-width: 768px) {
+  .app-header {
+    padding: 0 12px;
+  }
+
+  .header-content {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 0;
+  }
+
+  .logo {
+    font-size: 16px;
+    margin-right: 0;
+  }
+
+  .nav-menu {
+    width: 100%;
+  }
+
+  .nav-menu .el-menu-item {
+    padding: 0 12px !important;
+    font-size: 14px;
+  }
+
+  .app-main {
+    padding: 12px;
+  }
+
+  /* Element Plus 响应式 */
+  .el-dialog {
+    width: 90% !important;
+    margin: 16px auto !important;
+  }
+
+  .el-descriptions {
+    font-size: 13px;
+  }
+
+  .el-descriptions__label {
+    width: 80px !important;
+  }
+
+  .el-table {
+    font-size: 13px;
+  }
+
+  .el-card__body {
+    padding: 12px !important;
+  }
+
+  .el-form-item__label {
+    font-size: 14px;
+  }
+
+  .el-input-number {
+    width: 100% !important;
+  }
 }
 </style>

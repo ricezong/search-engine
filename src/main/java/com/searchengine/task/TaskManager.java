@@ -69,9 +69,17 @@ public class TaskManager {
                         indexed_term_count INTEGER DEFAULT 0,
                         create_time BIGINT,
                         update_time BIGINT,
-                        error_message TEXT
+                        error_message TEXT,
+                        proxy_host TEXT DEFAULT '127.0.0.1',
+                        proxy_port INTEGER DEFAULT 7890,
+                        use_proxy INTEGER DEFAULT 1
                     )
                 """);
+
+                // 检查并添加新列（兼容旧数据库）
+                addColumnIfNotExists("crawl_tasks", "proxy_host", "TEXT DEFAULT '127.0.0.1'");
+                addColumnIfNotExists("crawl_tasks", "proxy_port", "INTEGER DEFAULT 7890");
+                addColumnIfNotExists("crawl_tasks", "use_proxy", "INTEGER DEFAULT 1");
             }
 
             logger.info("Master数据库初始化成功");
@@ -102,15 +110,46 @@ public class TaskManager {
     }
 
     /**
+     * 添加列（如果不存在）
+     */
+    private void addColumnIfNotExists(String table, String column, String type) {
+        try {
+            String checkSql = "SELECT " + column + " FROM " + table + " LIMIT 1";
+            masterConn.createStatement().executeQuery(checkSql);
+        } catch (SQLException e) {
+            // 列不存在，添加它
+            try {
+                String alterSql = "ALTER TABLE " + table + " ADD COLUMN " + column + " " + type;
+                masterConn.createStatement().execute(alterSql);
+                logger.info("添加列: {}.{}", table, column);
+            } catch (SQLException ex) {
+                logger.error("添加列失败: {}.{}", table, column, ex);
+            }
+        }
+    }
+
+    /**
      * 创建新任务
      */
     public CrawlTask createTask(String taskName, List<String> seedUrls, int maxPages) {
+        return createTask(taskName, seedUrls, maxPages, Config.PROXY_HOST, Config.PROXY_PORT, true);
+    }
+
+    /**
+     * 创建新任务（带代理配置）
+     */
+    public CrawlTask createTask(String taskName, List<String> seedUrls, int maxPages,
+                                 String proxyHost, int proxyPort, boolean useProxy) {
         String taskId = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         CrawlTask task = new CrawlTask(taskId, taskName, seedUrls, maxPages);
+        task.setProxyHost(proxyHost);
+        task.setProxyPort(proxyPort);
+        task.setUseProxy(useProxy);
 
         String sql = "INSERT INTO crawl_tasks (task_id, task_name, status, seed_urls, max_pages, " +
-                     "crawled_count, analyzed_count, indexed_term_count, create_time, update_time) " +
-                     "VALUES (?, ?, ?, ?, ?, 0, 0, 0, ?, ?)";
+                     "crawled_count, analyzed_count, indexed_term_count, create_time, update_time, " +
+                     "proxy_host, proxy_port, use_proxy) " +
+                     "VALUES (?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?)";
         try (PreparedStatement ps = masterConn.prepareStatement(sql)) {
             ps.setString(1, taskId);
             ps.setString(2, taskName);
@@ -119,14 +158,53 @@ public class TaskManager {
             ps.setInt(5, maxPages);
             ps.setLong(6, task.getCreateTime());
             ps.setLong(7, task.getUpdateTime());
+            ps.setString(8, proxyHost);
+            ps.setInt(9, proxyPort);
+            ps.setInt(10, useProxy ? 1 : 0);
             ps.executeUpdate();
         } catch (SQLException e) {
             logger.error("创建任务失败", e);
             throw new RuntimeException("创建任务失败", e);
         }
 
-        logger.info("创建任务: taskId={}, name={}", taskId, taskName);
+        logger.info("创建任务: taskId={}, name={}, proxy={}:{}", taskId, taskName, proxyHost, proxyPort);
         return task;
+    }
+
+    /**
+     * 更新任务信息
+     */
+    public void updateTask(String taskId, String taskName, List<String> seedUrls, int maxPages) {
+        updateTask(taskId, taskName, seedUrls, maxPages, null, 0, null);
+    }
+
+    /**
+     * 更新任务信息（带代理配置）
+     */
+    public void updateTask(String taskId, String taskName, List<String> seedUrls, int maxPages,
+                            String proxyHost, int proxyPort, Boolean useProxy) {
+        CrawlTask existing = getTask(taskId);
+        if (existing == null) {
+            throw new RuntimeException("任务不存在: " + taskId);
+        }
+
+        String sql = "UPDATE crawl_tasks SET task_name = ?, seed_urls = ?, max_pages = ?, update_time = ?, " +
+                     "proxy_host = ?, proxy_port = ?, use_proxy = ? WHERE task_id = ?";
+        try (PreparedStatement ps = masterConn.prepareStatement(sql)) {
+            ps.setString(1, taskName);
+            ps.setString(2, String.join(",", seedUrls));
+            ps.setInt(3, maxPages);
+            ps.setLong(4, System.currentTimeMillis());
+            ps.setString(5, proxyHost != null ? proxyHost : existing.getProxyHost());
+            ps.setInt(6, proxyPort > 0 ? proxyPort : existing.getProxyPort());
+            ps.setInt(7, useProxy != null ? (useProxy ? 1 : 0) : (existing.isUseProxy() ? 1 : 0));
+            ps.setString(8, taskId);
+            ps.executeUpdate();
+            logger.info("更新任务: taskId={}, name={}", taskId, taskName);
+        } catch (SQLException e) {
+            logger.error("更新任务失败: taskId={}", taskId, e);
+            throw new RuntimeException("更新任务失败", e);
+        }
     }
 
     /**
@@ -287,6 +365,19 @@ public class TaskManager {
         task.setCreateTime(rs.getLong("create_time"));
         task.setUpdateTime(rs.getLong("update_time"));
         task.setErrorMessage(rs.getString("error_message"));
+
+        // 代理配置（兼容旧数据）
+        try {
+            task.setProxyHost(rs.getString("proxy_host"));
+            task.setProxyPort(rs.getInt("proxy_port"));
+            task.setUseProxy(rs.getInt("use_proxy") == 1);
+        } catch (SQLException e) {
+            // 旧表没有这些列，使用默认值
+            task.setProxyHost(Config.PROXY_HOST);
+            task.setProxyPort(Config.PROXY_PORT);
+            task.setUseProxy(true);
+        }
+
         return task;
     }
 

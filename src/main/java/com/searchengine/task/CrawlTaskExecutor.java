@@ -45,11 +45,19 @@ public class CrawlTaskExecutor {
             CrawlTask task = ctx.getTask();
             try {
                 taskManager.updateTaskStatus(taskId, TaskStatus.RUNNING, null);
+                // 设置代理配置
+                ctx.getCrawlerEngine().setProxyConfig(task.getProxyHost(), task.getProxyPort(), task.isUseProxy());
                 ctx.getCrawlerEngine().start(task.getSeedUrls(), task.getMaxPages());
                 // 更新进度
-                task.setCrawledCount(ctx.getDocStorage().getTotalDocCount());
-                taskManager.updateTaskProgress(taskId, task.getCrawledCount(), 0, 0);
-                taskManager.updateTaskStatus(taskId, TaskStatus.COMPLETED, null);
+                int crawledCount = ctx.getDocStorage().getTotalDocCount();
+                task.setCrawledCount(crawledCount);
+                taskManager.updateTaskProgress(taskId, crawledCount, 0, 0);
+
+                if (crawledCount == 0) {
+                    taskManager.updateTaskStatus(taskId, TaskStatus.FAILED, "爬取失败：未获取到任何网页内容");
+                } else {
+                    taskManager.updateTaskStatus(taskId, TaskStatus.COMPLETED, null);
+                }
             } catch (Exception e) {
                 logger.error("爬取任务执行失败: taskId={}", taskId, e);
                 taskManager.updateTaskStatus(taskId, TaskStatus.FAILED, e.getMessage());
@@ -108,6 +116,9 @@ public class CrawlTaskExecutor {
             try {
                 taskManager.updateTaskStatus(taskId, TaskStatus.RUNNING, null);
 
+                // 设置代理配置
+                ctx.getCrawlerEngine().setProxyConfig(task.getProxyHost(), task.getProxyPort(), task.isUseProxy());
+
                 // 1. 爬取
                 logger.info("任务 {} 开始爬取阶段", taskId);
                 ctx.getCrawlerEngine().start(task.getSeedUrls(), task.getMaxPages());
@@ -115,8 +126,15 @@ public class CrawlTaskExecutor {
                 task.setCrawledCount(crawledCount);
                 taskManager.updateTaskProgress(taskId, crawledCount, 0, 0);
 
+                // 检查是否爬取到内容
+                if (crawledCount == 0) {
+                    taskManager.updateTaskStatus(taskId, TaskStatus.FAILED, "爬取失败：未获取到任何网页内容，请检查种子URL或网络连接");
+                    logger.warn("任务 {} 爬取0页，标记为失败", taskId);
+                    return;
+                }
+
                 // 2. 分析
-                logger.info("任务 {} 开始分析阶段", taskId);
+                logger.info("任务 {} 开始分析阶段，共{}页", taskId, crawledCount);
                 int analyzedCount = ctx.getAnalyzerEngine().analyze();
                 task.setAnalyzedCount(analyzedCount);
                 taskManager.updateTaskProgress(taskId, crawledCount, analyzedCount, 0);
@@ -129,7 +147,7 @@ public class CrawlTaskExecutor {
                 taskManager.updateTaskProgress(taskId, crawledCount, analyzedCount, termCount);
 
                 taskManager.updateTaskStatus(taskId, TaskStatus.COMPLETED, null);
-                logger.info("任务 {} 全流程执行完成", taskId);
+                logger.info("任务 {} 全流程执行完成: 爬取{}页, 分析{}页, 索引{}词", taskId, crawledCount, analyzedCount, termCount);
 
             } catch (Exception e) {
                 logger.error("全流程任务执行失败: taskId={}", taskId, e);

@@ -31,7 +31,7 @@ public class SearchEngineController {
     /**
      * 创建任务
      * POST /api/tasks
-     * Body: { "taskName": "xxx", "seedUrls": ["..."], "maxPages": 100 }
+     * Body: { "taskName": "xxx", "seedUrls": ["..."], "maxPages": 100, "proxyHost": "127.0.0.1", "proxyPort": 7890, "useProxy": true }
      */
     @PostMapping("/tasks")
     public Map<String, Object> createTask(@RequestBody Map<String, Object> body) {
@@ -40,17 +40,62 @@ public class SearchEngineController {
             String taskName = (String) body.getOrDefault("taskName", "未命名任务");
             List<String> seedUrls = (List<String>) body.getOrDefault("seedUrls", Collections.emptyList());
             int maxPages = (int) body.getOrDefault("maxPages", 100);
+            String proxyHost = (String) body.getOrDefault("proxyHost", com.searchengine.common.Config.PROXY_HOST);
+            int proxyPort = (int) body.getOrDefault("proxyPort", com.searchengine.common.Config.PROXY_PORT);
+            boolean useProxy = (boolean) body.getOrDefault("useProxy", true);
 
             if (seedUrls.isEmpty()) {
                 seedUrls = Arrays.asList("https://www.baidu.com", "https://www.sina.com.cn", "https://www.qq.com");
             }
 
-            CrawlTask task = taskManager.createTask(taskName, seedUrls, maxPages);
+            CrawlTask task = taskManager.createTask(taskName, seedUrls, maxPages, proxyHost, proxyPort, useProxy);
             result.put("status", "success");
             result.put("task", taskToMap(task));
         } catch (Exception e) {
             result.put("status", "error");
             result.put("message", "创建任务失败: " + e.getMessage());
+        }
+        return result;
+    }
+
+    /**
+     * 更新任务
+     * PUT /api/tasks/{taskId}
+     * Body: { "taskName": "xxx", "seedUrls": ["..."], "maxPages": 100, "proxyHost": "127.0.0.1", "proxyPort": 7890, "useProxy": true }
+     */
+    @PutMapping("/tasks/{taskId}")
+    public Map<String, Object> updateTask(@PathVariable String taskId, @RequestBody Map<String, Object> body) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            CrawlTask task = taskManager.getTask(taskId);
+            if (task == null) {
+                result.put("status", "error");
+                result.put("message", "任务不存在: " + taskId);
+                return result;
+            }
+
+            if (task.getStatus() == TaskStatus.RUNNING) {
+                result.put("status", "error");
+                result.put("message", "运行中的任务不能编辑");
+                return result;
+            }
+
+            String taskName = (String) body.getOrDefault("taskName", task.getTaskName());
+            List<String> seedUrls = (List<String>) body.getOrDefault("seedUrls", task.getSeedUrls());
+            int maxPages = (int) body.getOrDefault("maxPages", task.getMaxPages());
+
+            // 代理配置
+            String proxyHost = body.containsKey("proxyHost") ? (String) body.get("proxyHost") : null;
+            Integer proxyPort = body.containsKey("proxyPort") ? (Integer) body.get("proxyPort") : null;
+            Boolean useProxy = body.containsKey("useProxy") ? (Boolean) body.get("useProxy") : null;
+
+            taskManager.updateTask(taskId, taskName, seedUrls, maxPages,
+                    proxyHost, proxyPort != null ? proxyPort : 0, useProxy);
+            result.put("status", "success");
+            result.put("task", taskToMap(taskManager.getTask(taskId)));
+        } catch (Exception e) {
+            result.put("status", "error");
+            result.put("message", "更新任务失败: " + e.getMessage());
         }
         return result;
     }
@@ -205,6 +250,73 @@ public class SearchEngineController {
         return result;
     }
 
+    /**
+     * 获取任务执行日志
+     * GET /api/tasks/{taskId}/logs
+     */
+    @GetMapping("/tasks/{taskId}/logs")
+    public Map<String, Object> getLogs(@PathVariable String taskId,
+                                       @RequestParam(defaultValue = "100") int limit) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            CrawlTask task = taskManager.getTask(taskId);
+            if (task == null) {
+                result.put("status", "error");
+                result.put("message", "任务不存在: " + taskId);
+                return result;
+            }
+
+            List<Map<String, String>> logs = new ArrayList<>();
+
+            // 添加状态变更日志
+            if (task.getCreateTime() > 0) {
+                logs.add(Map.of(
+                    "time", formatTime(task.getCreateTime()),
+                    "level", "INFO",
+                    "message", "任务创建: " + task.getTaskName()
+                ));
+            }
+
+            if (task.getStatus() == TaskStatus.COMPLETED) {
+                logs.add(Map.of(
+                    "time", formatTime(task.getUpdateTime()),
+                    "level", "INFO",
+                    "message", "任务完成: 爬取" + task.getCrawledCount() + "页, 分析" + task.getAnalyzedCount() + "页, 索引" + task.getIndexedTermCount() + "词"
+                ));
+            } else if (task.getStatus() == TaskStatus.FAILED && task.getErrorMessage() != null) {
+                logs.add(Map.of(
+                    "time", formatTime(task.getUpdateTime()),
+                    "level", "ERROR",
+                    "message", "任务失败: " + task.getErrorMessage()
+                ));
+            } else if (task.getStatus() == TaskStatus.STOPPED) {
+                logs.add(Map.of(
+                    "time", formatTime(task.getUpdateTime()),
+                    "level", "WARN",
+                    "message", "任务已停止"
+                ));
+            } else if (task.getStatus() == TaskStatus.RUNNING) {
+                logs.add(Map.of(
+                    "time", formatTime(System.currentTimeMillis()),
+                    "level", "INFO",
+                    "message", "运行中: 爬取" + task.getCrawledCount() + "/" + task.getMaxPages() + "页"
+                ));
+            }
+
+            result.put("status", "success");
+            result.put("logs", logs);
+        } catch (Exception e) {
+            result.put("status", "error");
+            result.put("message", "获取日志失败: " + e.getMessage());
+        }
+        return result;
+    }
+
+    private String formatTime(long timestamp) {
+        if (timestamp <= 0) return "-";
+        return new java.text.SimpleDateFormat("HH:mm:ss").format(new java.util.Date(timestamp));
+    }
+
     // ==================== 搜索 API ====================
 
     /**
@@ -229,6 +341,27 @@ public class SearchEngineController {
         } catch (Exception e) {
             result.put("status", "error");
             result.put("message", "搜索失败: " + e.getMessage());
+        }
+        return result;
+    }
+
+    /**
+     * 获取任务的热门关键词
+     * GET /api/tasks/{taskId}/keywords?limit=20
+     */
+    @GetMapping("/tasks/{taskId}/keywords")
+    public Map<String, Object> getKeywords(@PathVariable String taskId,
+                                           @RequestParam(defaultValue = "20") int limit) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            TaskContext ctx = taskManager.getTaskContext(taskId);
+            List<String> keywords = ctx.getSearchEngine().getTopKeywords(limit);
+
+            result.put("status", "success");
+            result.put("keywords", keywords);
+        } catch (Exception e) {
+            result.put("status", "error");
+            result.put("message", "获取关键词失败: " + e.getMessage());
         }
         return result;
     }
@@ -286,6 +419,9 @@ public class SearchEngineController {
         map.put("createTime", task.getCreateTime());
         map.put("updateTime", task.getUpdateTime());
         map.put("errorMessage", task.getErrorMessage());
+        map.put("proxyHost", task.getProxyHost());
+        map.put("proxyPort", task.getProxyPort());
+        map.put("useProxy", task.isUseProxy());
         return map;
     }
 }

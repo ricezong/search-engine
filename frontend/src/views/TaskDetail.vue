@@ -10,47 +10,63 @@
     </div>
 
     <template v-else>
-      <!-- 基本信息 -->
+      <!-- 状态卡片 -->
       <el-card class="info-card" shadow="hover">
-        <template #header>
-          <div class="card-header">
-            <span>基本信息</span>
-            <el-tag :type="statusType(task.status)" size="large">{{ statusLabel(task.status) }}</el-tag>
-          </div>
-        </template>
-        <el-descriptions :column="2" border>
-          <el-descriptions-item label="任务ID">{{ task.taskId }}</el-descriptions-item>
-          <el-descriptions-item label="任务名称">{{ task.taskName }}</el-descriptions-item>
-          <el-descriptions-item label="最大页面数">{{ task.maxPages }}</el-descriptions-item>
-          <el-descriptions-item label="创建时间">{{ formatTime(task.createTime) }}</el-descriptions-item>
-          <el-descriptions-item label="更新时间">{{ formatTime(task.updateTime) }}</el-descriptions-item>
-          <el-descriptions-item label="错误信息">{{ task.errorMessage || '无' }}</el-descriptions-item>
-          <el-descriptions-item label="种子URL" :span="2">
-            <el-tag v-for="url in (task.seedUrls || [])" :key="url" size="small" type="info" style="margin: 2px 4px;">{{ url }}</el-tag>
-          </el-descriptions-item>
-        </el-descriptions>
-      </el-card>
+        <div class="status-header">
+          <el-tag :type="statusType(task.status)" size="large">{{ statusLabel(task.status) }}</el-tag>
+          <span class="task-id">#{{ task.taskId }}</span>
+        </div>
 
-      <!-- 统计数据 -->
-      <el-card class="info-card" shadow="hover">
-        <template #header><span>统计数据</span></template>
+        <!-- 进度条 -->
+        <div v-if="task.status === 'RUNNING'" class="progress-section">
+          <el-progress :percentage="progressPercent" :stroke-width="20" :text-inside="true" />
+          <div class="progress-detail">
+            爬取: {{ task.crawledCount }}/{{ task.maxPages }} |
+            分析: {{ task.analyzedCount }} |
+            索引: {{ task.indexedTermCount }} 词
+          </div>
+        </div>
+
+        <!-- 统计数据 -->
         <div class="stats-grid">
           <div class="stat-item">
             <div class="stat-value">{{ task.crawledCount }}</div>
-            <div class="stat-label">已爬取页面</div>
+            <div class="stat-label">已爬取</div>
           </div>
           <div class="stat-item">
             <div class="stat-value">{{ task.analyzedCount }}</div>
-            <div class="stat-label">已分析文档</div>
+            <div class="stat-label">已分析</div>
           </div>
           <div class="stat-item">
             <div class="stat-value">{{ task.indexedTermCount }}</div>
             <div class="stat-label">索引词数</div>
           </div>
+          <div class="stat-item">
+            <div class="stat-value">{{ task.maxPages }}</div>
+            <div class="stat-label">目标页数</div>
+          </div>
+        </div>
+
+        <!-- 错误信息 -->
+        <div v-if="task.errorMessage" class="task-error">
+          <el-alert :title="task.errorMessage" type="error" :closable="false" show-icon />
         </div>
       </el-card>
 
-      <!-- 详细统计（从API获取） -->
+      <!-- 基本信息 -->
+      <el-card class="info-card" shadow="hover">
+        <template #header><span>基本信息</span></template>
+        <el-descriptions :column="responsiveColumns" border>
+          <el-descriptions-item label="任务名称">{{ task.taskName }}</el-descriptions-item>
+          <el-descriptions-item label="创建时间">{{ formatTime(task.createTime) }}</el-descriptions-item>
+          <el-descriptions-item label="更新时间">{{ formatTime(task.updateTime) }}</el-descriptions-item>
+          <el-descriptions-item label="种子URL" :span="responsiveColumns">
+            <el-tag v-for="url in (task.seedUrls || [])" :key="url" size="small" type="info" class="url-tag">{{ url }}</el-tag>
+          </el-descriptions-item>
+        </el-descriptions>
+      </el-card>
+
+      <!-- 详细统计 -->
       <el-card v-if="stats" class="info-card" shadow="hover">
         <template #header><span>详细统计</span></template>
         <el-descriptions :column="1" border>
@@ -60,16 +76,39 @@
         </el-descriptions>
       </el-card>
 
+      <!-- 执行日志 -->
+      <el-card class="info-card" shadow="hover">
+        <template #header>
+          <div class="card-header">
+            <span>执行日志</span>
+            <el-button size="small" @click="loadLogs">刷新</el-button>
+          </div>
+        </template>
+        <div class="log-container">
+          <div v-if="logs.length === 0" class="log-empty">暂无日志</div>
+          <div v-else class="log-list">
+            <div v-for="(log, index) in logs" :key="index" class="log-item" :class="logClass(log)">
+              <span class="log-time">{{ log.time }}</span>
+              <span class="log-level">{{ log.level }}</span>
+              <span class="log-message">{{ log.message }}</span>
+            </div>
+          </div>
+        </div>
+      </el-card>
+
       <!-- 操作按钮 -->
       <el-card class="info-card" shadow="hover">
         <template #header><span>操作</span></template>
         <div class="action-buttons">
-          <el-button type="success" :disabled="task.status === 'RUNNING'" @click="doAction('full')">全流程执行</el-button>
-          <el-button :disabled="task.status === 'RUNNING'" @click="doAction('crawl')">爬取</el-button>
-          <el-button :disabled="task.status === 'RUNNING'" @click="doAction('analyze')">分析</el-button>
-          <el-button :disabled="task.status === 'RUNNING'" @click="doAction('index')">构建索引</el-button>
-          <el-button v-if="task.status === 'RUNNING'" type="warning" @click="doStop">停止</el-button>
-          <el-button type="info" @click="router.push(`/search?taskId=${task.taskId}`)">去搜索</el-button>
+          <el-button type="success" :disabled="task.status === 'RUNNING'" @click="doAction('full')">
+            <el-icon><VideoPlay /></el-icon> 开始挖掘
+          </el-button>
+          <el-button v-if="task.status === 'RUNNING'" type="warning" @click="doStop">
+            <el-icon><VideoPause /></el-icon> 停止
+          </el-button>
+          <el-button type="info" @click="router.push(`/search?taskId=${task.taskId}`)">
+            <el-icon><Search /></el-icon> 去搜索
+          </el-button>
         </div>
       </el-card>
     </template>
@@ -77,9 +116,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { VideoPlay, VideoPause, Search } from '@element-plus/icons-vue'
 import * as api from '../api'
 
 const route = useRoute()
@@ -87,7 +127,19 @@ const router = useRouter()
 const taskId = route.params.id
 const task = ref(null)
 const stats = ref(null)
+const logs = ref([])
 let refreshTimer = null
+
+// 响应式列数
+const responsiveColumns = computed(() => {
+  return window.innerWidth < 768 ? 1 : 2
+})
+
+// 进度百分比
+const progressPercent = computed(() => {
+  if (!task.value || task.value.maxPages === 0) return 0
+  return Math.min(100, Math.round((task.value.crawledCount / task.value.maxPages) * 100))
+})
 
 function statusType(status) {
   const map = { PENDING: 'info', RUNNING: 'primary', COMPLETED: 'success', FAILED: 'danger', STOPPED: 'warning' }
@@ -102,6 +154,12 @@ function statusLabel(status) {
 function formatTime(ts) {
   if (!ts) return '-'
   return new Date(ts).toLocaleString('zh-CN')
+}
+
+function logClass(log) {
+  if (log.level === 'ERROR') return 'log-error'
+  if (log.level === 'WARN') return 'log-warn'
+  return 'log-info'
 }
 
 async function loadTask() {
@@ -122,7 +180,18 @@ async function loadStats() {
       stats.value = res.data
     }
   } catch (e) {
-    // 统计信息可能不可用（任务还未开始）
+    // 统计信息可能不可用
+  }
+}
+
+async function loadLogs() {
+  try {
+    const res = await api.getTaskLogs(taskId)
+    if (res.data.status === 'success') {
+      logs.value = res.data.logs || []
+    }
+  } catch (e) {
+    // 日志可能不可用
   }
 }
 
@@ -139,7 +208,7 @@ async function doAction(action) {
     const res = await fn(taskId)
     if (res.data.status === 'started') {
       ElMessage.success(res.data.message)
-      setTimeout(() => { loadTask(); loadStats() }, 500)
+      setTimeout(() => { loadTask(); loadStats(); loadLogs() }, 500)
     } else {
       ElMessage.error(res.data.message || '操作失败')
     }
@@ -163,9 +232,11 @@ async function doStop() {
 onMounted(() => {
   loadTask()
   loadStats()
+  loadLogs()
   refreshTimer = setInterval(() => {
     loadTask()
     loadStats()
+    loadLogs()
   }, 3000)
 })
 
@@ -193,10 +264,33 @@ onUnmounted(() => {
   align-items: center;
 }
 
-.stats-grid {
+.status-header {
   display: flex;
-  gap: 32px;
-  justify-content: center;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.task-id {
+  color: #909399;
+  font-size: 14px;
+}
+
+.progress-section {
+  margin-bottom: 20px;
+}
+
+.progress-detail {
+  margin-top: 8px;
+  color: #606266;
+  font-size: 14px;
+  text-align: center;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
   padding: 16px 0;
 }
 
@@ -205,7 +299,7 @@ onUnmounted(() => {
 }
 
 .stat-value {
-  font-size: 36px;
+  font-size: 28px;
   font-weight: 700;
   color: #409eff;
 }
@@ -213,12 +307,110 @@ onUnmounted(() => {
 .stat-label {
   font-size: 14px;
   color: #909399;
-  margin-top: 8px;
+  margin-top: 4px;
+}
+
+.task-error {
+  margin-top: 12px;
+}
+
+.url-tag {
+  margin: 2px 4px;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.log-container {
+  max-height: 400px;
+  overflow-y: auto;
+  background: #1e1e1e;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.log-empty {
+  color: #909399;
+  text-align: center;
+  padding: 20px;
+}
+
+.log-list {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 13px;
+}
+
+.log-item {
+  padding: 4px 0;
+  border-bottom: 1px solid #333;
+  display: flex;
+  gap: 8px;
+}
+
+.log-time {
+  color: #6a9955;
+  white-space: nowrap;
+}
+
+.log-level {
+  white-space: nowrap;
+  min-width: 50px;
+}
+
+.log-message {
+  flex: 1;
+  word-break: break-all;
+}
+
+.log-info .log-level {
+  color: #569cd6;
+}
+
+.log-warn .log-level {
+  color: #dcdcaa;
+}
+
+.log-error .log-level {
+  color: #f44747;
+}
+
+.log-error .log-message {
+  color: #f44747;
 }
 
 .action-buttons {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
+}
+
+/* 手机端适配 */
+@media (max-width: 768px) {
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .stat-value {
+    font-size: 20px;
+  }
+
+  .url-tag {
+    max-width: 100%;
+    display: block;
+    margin: 4px 0;
+  }
+
+  .log-container {
+    max-height: 300px;
+  }
+
+  .log-item {
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .action-buttons {
+    justify-content: center;
+  }
 }
 </style>

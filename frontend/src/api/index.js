@@ -18,6 +18,10 @@ export function createTask(data) {
   return api.post('/tasks', data)
 }
 
+export function updateTask(taskId, data) {
+  return api.put(`/tasks/${taskId}`, data)
+}
+
 export function deleteTask(taskId) {
   return api.delete(`/tasks/${taskId}`)
 }
@@ -47,7 +51,16 @@ export function getTaskStats(taskId) {
   return api.get(`/tasks/${taskId}/stats`)
 }
 
+export function getTaskLogs(taskId) {
+  return api.get(`/tasks/${taskId}/logs`)
+}
+
 // 搜索
 export function search(taskId, query, page = 1) {
   return api.get(`/tasks/${taskId}/search`, { params: { query, page } })
+}
+
+// 热门关键词
+export function getKeywords(taskId, limit = 20) {
+  return api.get(`/tasks/${taskId}/keywords`, { params: { limit } })
 }
