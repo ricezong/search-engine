@@ -154,12 +154,13 @@ public class DatabaseManager {
             """);
             logger.info("创建表: term_offset");
 
-            // 6. 文档元信息表
+            // 6. 文档元信息表（增加 keywords 字段）
             stmt.execute("""
                 CREATE TABLE IF NOT EXISTS doc_meta (
                     doc_id INTEGER PRIMARY KEY,
                     snippet TEXT,
                     word_count INTEGER DEFAULT 0,
+                    keywords TEXT,
                     FOREIGN KEY (doc_id) REFERENCES doc_id_map(doc_id)
                 )
             """);
