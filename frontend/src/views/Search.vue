@@ -17,9 +17,9 @@
         <p class="hero-subtitle">在索引内容中快速找到你需要的信息</p>
       </div>
 
-      <!-- Search Box -->
+      <!-- Search Container -->
       <div class="search-container">
-        <!-- Task Selector -->
+        <!-- Task Selector - Tab Style -->
         <div class="task-selector">
           <label class="selector-label">
             <svg viewBox="0 0 20 20" fill="currentColor">
@@ -27,31 +27,40 @@
             </svg>
             <span>选择任务</span>
           </label>
-          <el-select
-              v-model="selectedTaskId"
-              placeholder="选择一个任务开始搜索"
-              class="task-select"
-              @change="onTaskChange"
-              size="large"
-              filterable
-          >
-            <template #prefix>
-              <svg viewBox="0 0 20 20" fill="currentColor" class="select-icon">
-                <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/>
-              </svg>
-            </template>
-            <el-option
+
+          <!-- No tasks state -->
+          <div v-if="tasks.length === 0" class="no-tasks">
+            <span>暂无任务，请先创建任务</span>
+          </div>
+
+          <!-- Task tabs -->
+          <div v-else class="task-tabs">
+            <button
                 v-for="task in tasks"
                 :key="task.taskId"
-                :label="task.taskName"
-                :value="task.taskId"
+                class="task-tab"
+                :class="{ active: selectedTaskId === task.taskId }"
+                @click="selectTask(task.taskId)"
             >
-              <div class="task-option">
-                <span class="task-name">{{ task.taskName }}</span>
-                <span class="task-count">{{ task.indexedTermCount }} 词</span>
+              <div class="tab-icon" :style="{ background: getTaskColor(task.status) }">
+                <svg v-if="task.status === 'RUNNING'" class="icon-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4"/>
+                </svg>
+                <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/>
+                </svg>
               </div>
-            </el-option>
-          </el-select>
+              <div class="tab-content">
+                <span class="tab-name">{{ task.taskName }}</span>
+                <span class="tab-info">{{ task.indexedTermCount }} 词 · {{ statusLabel(task.status) }}</span>
+              </div>
+              <div v-if="selectedTaskId === task.taskId" class="tab-check">
+                <svg viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                </svg>
+              </div>
+            </button>
+          </div>
         </div>
 
         <!-- Search Input -->
@@ -65,7 +74,8 @@
                 v-model="query"
                 type="text"
                 class="search-input"
-                placeholder="输入搜索关键词..."
+                :placeholder="selectedTaskId ? '输入搜索关键词...' : '请先选择任务'"
+                :disabled="!selectedTaskId"
                 @focus="isFocused = true"
                 @blur="isFocused = false"
                 @keyup.enter="doSearch"
@@ -326,6 +336,31 @@ function onTaskChange() {
   loadKeywords()
 }
 
+function selectTask(taskId) {
+  selectedTaskId.value = taskId
+  onTaskChange()
+}
+
+function getTaskColor(status) {
+  const colors = {
+    RUNNING: 'var(--accent-primary)',
+    SUCCESS: 'var(--accent-secondary)',
+    FAILED: '#e57373',
+    PAUSED: 'var(--accent-tertiary)'
+  }
+  return colors[status] || 'var(--text-muted)'
+}
+
+function statusLabel(status) {
+  const labels = {
+    RUNNING: '运行中',
+    SUCCESS: '已完成',
+    FAILED: '已失败',
+    PAUSED: '已暂停'
+  }
+  return labels[status] || status
+}
+
 function searchKeyword(word) {
   query.value = word
   doSearch()
@@ -484,42 +519,99 @@ onMounted(() => {
   height: 14px;
 }
 
-.task-select {
+.no-tasks {
+  padding: 24px;
+  text-align: center;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* Task Tabs */
+.task-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-tab {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: white;
+  border: 2px solid var(--border-light);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.25s ease;
+  font-family: inherit;
+  text-align: left;
   width: 100%;
 }
 
-.task-select :deep(.el-input__wrapper) {
-  background: white !important;
-  border-radius: var(--radius-md) !important;
-  box-shadow: var(--shadow-soft) !important;
-  padding: 12px 16px !important;
+.task-tab:hover {
+  border-color: var(--accent-primary);
+  background: rgba(224, 122, 95, 0.04);
 }
 
-.task-select :deep(.el-input__inner) {
-  font-size: 15px !important;
+.task-tab.active {
+  border-color: var(--accent-primary);
+  background: rgba(224, 122, 95, 0.08);
 }
 
-.select-icon {
+.tab-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.tab-icon svg {
   width: 18px;
   height: 18px;
-  color: var(--text-muted);
-  margin-right: 8px;
+  color: white;
 }
 
-.task-option {
+.tab-icon .icon-spin {
+  animation: spin 2s linear infinite;
+}
+
+.tab-content {
+  flex: 1;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 4px 0;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
-.task-name {
-  font-weight: 500;
+.tab-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.task-count {
+.tab-info {
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.tab-check {
+  width: 20px;
+  height: 20px;
+  color: var(--accent-primary);
+  flex-shrink: 0;
+}
+
+.tab-check svg {
+  width: 100%;
+  height: 100%;
 }
 
 /* Search Box */
